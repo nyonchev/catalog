@@ -966,6 +966,7 @@ var hasConsole = typeof window !== "undefined" && window.console;
 var noop = function noop() {};
 var swallowInvalidHeadWarning = noop;
 var resetWarnings = noop;
+var DEBOUNCE_WAIT_TIME_MS = 100;
 
 if (hasConsole) {
   var originalError = console.error; // eslint-disable-line no-console
@@ -984,16 +985,39 @@ if (hasConsole) {
   };
 }
 
+var debounce = function debounce(fn, time) {
+  var timeout = void 0;
+
+  return function () {
+    var _this = this,
+        _arguments = arguments;
+
+    var functionCall = function functionCall() {
+      return fn.apply(_this, _arguments);
+    };
+
+    clearTimeout(timeout);
+    timeout = setTimeout(functionCall, time);
+  };
+};
+
 var FrameComponent = function (_Component) {
   inherits(FrameComponent, _Component);
 
   function FrameComponent() {
     classCallCheck(this, FrameComponent);
 
-    var _this = possibleConstructorReturn(this, _Component.call(this));
+    var _this2 = possibleConstructorReturn(this, _Component.call(this));
 
-    _this.renderFrameContents = _this.renderFrameContents.bind(_this);
-    return _this;
+    _this2.renderFrameContents = _this2.renderFrameContents.bind(_this2);
+    _this2.debouncedRenderFrameContents = debounce(_this2.renderFrameContents, DEBOUNCE_WAIT_TIME_MS);
+    _this2.startMutationObserver = _this2.startMutationObserver.bind(_this2);
+    _this2.stopMutationObserver = _this2.stopMutationObserver.bind(_this2);
+    _this2.decorateCssInsertRule = _this2.decorateCssInsertRule.bind(_this2);
+    _this2.restoreOriginalInsertRule = _this2.restoreOriginalInsertRule.bind(_this2);
+    _this2.decorateCssInsertRule();
+    _this2.startMutationObserver();
+    return _this2;
   }
 
   FrameComponent.prototype.componentDidMount = function componentDidMount() {
@@ -1009,10 +1033,50 @@ var FrameComponent = function (_Component) {
     if (doc) {
       unmountComponentAtNode(doc.body);
     }
+    this.stopMutationObserver();
+    this.restoreOriginalInsertRule();
+  };
+
+  FrameComponent.prototype.startMutationObserver = function startMutationObserver() {
+    var _this3 = this;
+
+    var target = document.querySelector("head");
+
+    // render iframe content after a styles were added of modified
+    this.observer = new MutationObserver(function () {
+      return _this3.debouncedRenderFrameContents();
+    });
+
+    var config = {
+      childList: true,
+      subtree: true,
+      characterData: true
+    };
+
+    this.observer.observe(target, config);
+  };
+
+  FrameComponent.prototype.stopMutationObserver = function stopMutationObserver() {
+    this.observer.disconnect();
+  };
+
+  FrameComponent.prototype.decorateCssInsertRule = function decorateCssInsertRule() {
+    // this is a workaround due to the impossibility to detect CSSStyleSheet.insertRule
+    var that = this;
+    that.originalInsertRule = CSSStyleSheet.prototype.insertRule;
+
+    CSSStyleSheet.prototype.insertRule = function (style, index) {
+      that.originalInsertRule.call(this, style, index);
+      that.debouncedRenderFrameContents();
+    };
+  };
+
+  FrameComponent.prototype.restoreOriginalInsertRule = function restoreOriginalInsertRule() {
+    CSSStyleSheet.prototype.insertRule = this.originalInsertRule;
   };
 
   FrameComponent.prototype.renderFrameContents = function renderFrameContents() {
-    var _this2 = this;
+    var _this4 = this;
 
     if (!this.iframe) {
       return;
@@ -1041,14 +1105,25 @@ var FrameComponent = function (_Component) {
       // This doesn't clone any Catalog styles because they are either inline styles or part of the body.
       var pageStyles = Array.from(document.querySelectorAll('head > style, head > link[rel="stylesheet"]'));
       pageStyles.forEach(function (s) {
-        doc.head.appendChild(s.cloneNode(true));
+        var clonedNode = s.cloneNode(true);
+
+        // Take styles inserted with insertRule and turn into regular styles inside a style tag
+        // cloneNode does not clone styles inserted with insertRule
+        // This fix allows to render style components inside an iframe in production
+        var insertedStyles = s.sheet.cssRules;
+        var insertedStylesArray = Array.prototype.slice.call(insertedStyles);
+        insertedStylesArray.forEach(function (cssRule) {
+          return clonedNode.textContent += cssRule.cssText;
+        });
+
+        doc.head.appendChild(clonedNode);
       });
 
       swallowInvalidHeadWarning();
       unstable_renderSubtreeIntoContainer(this, contents, doc.body.firstChild, function () {
-        if (_this2.props.onRender) {
+        if (_this4.props.onRender) {
           raf(function () {
-            _this2.props.onRender(doc.body.firstChild);
+            _this4.props.onRender(doc.body.firstChild);
           });
         }
       });
@@ -1059,13 +1134,13 @@ var FrameComponent = function (_Component) {
   };
 
   FrameComponent.prototype.render = function render() {
-    var _this3 = this;
+    var _this5 = this;
 
     var style = this.props.style;
 
     return React.createElement("iframe", {
       ref: function ref(el) {
-        _this3.iframe = el;
+        _this5.iframe = el;
       },
       className: /*#__PURE__*/ /*#__PURE__*/css(style, "label:FrameComponent;", "label:FrameComponent;")
     });
