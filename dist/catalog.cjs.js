@@ -974,7 +974,7 @@ var hasConsole = typeof window !== "undefined" && window.console;
 var noop = function noop() {};
 var swallowInvalidHeadWarning = noop;
 var resetWarnings = noop;
-var DEBOUNCE_WAIT_TIME_MS = 100;
+var DEBOUNCE_WAIT_TIME_MS = 30;
 
 if (hasConsole) {
   var originalError = console.error; // eslint-disable-line no-console

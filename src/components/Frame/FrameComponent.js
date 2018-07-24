@@ -18,7 +18,7 @@ const hasConsole = typeof window !== "undefined" && window.console;
 const noop = () => {};
 let swallowInvalidHeadWarning = noop;
 let resetWarnings = noop;
-const DEBOUNCE_WAIT_TIME_MS = 100;
+const DEBOUNCE_WAIT_TIME_MS = 30;
 
 if (hasConsole) {
   const originalError = console.error; // eslint-disable-line no-console
